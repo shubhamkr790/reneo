@@ -1,0 +1,31 @@
+{
+  "name": "reneo-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Reneo — multi-seller commerce platform",
+  "type": "module",
+  "scripts": {
+    "dev":   "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "test":  "vitest run"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.4",
+    "dotenv":  "^16.5.0",
+    "express": "^5.1.0",
+    "pg":      "^8.16.3",
+    "uuid":    "^11.1.0",
+    "zod":     "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/express":    "^5.0.3",
+    "@types/node":       "^22.15.3",
+    "@types/pg":         "^8.11.13",
+    "@types/supertest":  "^6.0.3",
+    "@types/uuid":       "^10.0.0",
+    "supertest":         "^7.1.0",
+    "tsx":               "^4.19.4",
+    "typescript":        "^5.8.3",
+    "vitest":            "^3.2.4"
+  }
+}
