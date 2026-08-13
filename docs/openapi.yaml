@@ -1,0 +1,261 @@
+openapi: "3.0.3"
+info:
+  title: Reneo Backend API
+  description: Multi-seller commerce platform API
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:    { type: string }
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:   { type: string }
+                  message: { type: string }
+
+    Product:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        store_id:    { type: string, format: uuid }
+        name:        { type: string }
+        description: { type: string, nullable: true }
+        category:    { type: string, nullable: true }
+        price_minor: { type: integer, description: "Price in smallest currency unit (e.g. FCFA)" }
+        status:      { type: string, enum: [ACTIVE, ARCHIVED, DRAFT] }
+        created_at:  { type: string, format: date-time }
+        updated_at:  { type: string, format: date-time }
+
+    Order:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        status:      { type: string, enum: [PENDING, CONFIRMED, SHIPPED, DELIVERED, CANCELLED] }
+        total_minor: { type: integer, description: "Server-computed total in smallest currency unit" }
+        created_at:  { type: string, format: date-time }
+        order_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+
+    OrderItem:
+      type: object
+      properties:
+        id:               { type: string, format: uuid }
+        order_id:         { type: string, format: uuid }
+        product_id:       { type: string, format: uuid }
+        quantity:         { type: integer, minimum: 1 }
+        unit_price_minor: { type: integer, description: "Price snapshot at order time" }
+
+paths:
+  /auth/register:
+    post:
+      summary: Register a new user
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, full_name, role]
+              properties:
+                email:     { type: string, format: email }
+                password:  { type: string, minLength: 8 }
+                full_name: { type: string }
+                role:      { type: string, enum: [SELLER, CUSTOMER] }
+      responses:
+        "201": { description: Registration successful }
+        "400": { description: Validation error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /auth/login:
+    post:
+      summary: Login and receive JWT
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:    { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: JWT tokens
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:  { type: string }
+                  refresh_token: { type: string }
+                  expires_in:    { type: integer }
+        "401": { description: Invalid credentials }
+
+  /products:
+    get:
+      summary: Search and list products (public, paginated)
+      tags: [Products]
+      parameters:
+        - { name: search,    in: query, schema: { type: string } }
+        - { name: category,  in: query, schema: { type: string } }
+        - { name: min_price, in: query, schema: { type: integer } }
+        - { name: max_price, in: query, schema: { type: integer } }
+        - { name: in_stock,  in: query, schema: { type: boolean } }
+        - { name: sort,      in: query, schema: { type: string, enum: [price_asc, price_desc, newest] } }
+        - { name: cursor,    in: query, schema: { type: string }, description: "Keyset cursor from previous response" }
+        - { name: limit,     in: query, schema: { type: integer, default: 20 } }
+      responses:
+        "200":
+          description: Paginated product list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:      { type: array, items: { $ref: '#/components/schemas/Product' } }
+                  nextCursor: { type: string, nullable: true, description: "Pass as cursor param for next page" }
+
+    post:
+      summary: Create a product (seller only)
+      tags: [Products]
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, price_minor]
+              properties:
+                name:        { type: string }
+                description: { type: string }
+                category:    { type: string }
+                price_minor: { type: integer, minimum: 1 }
+                status:      { type: string, enum: [ACTIVE, DRAFT] }
+                stock_qty:   { type: integer, minimum: 0, default: 0 }
+      responses:
+        "201": { description: Product created, content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } } }
+        "401": { description: Unauthenticated }
+        "403": { description: Not a seller }
+
+  /products/{id}:
+    get:
+      summary: Get a single product
+      tags: [Products]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Product, content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } } }
+        "404": { description: Not found }
+
+    patch:
+      summary: Update a product (seller, own products only)
+      tags: [Products]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:        { type: string }
+                description: { type: string }
+                category:    { type: string }
+                price_minor: { type: integer, minimum: 1 }
+                status:      { type: string, enum: [ACTIVE, ARCHIVED, DRAFT] }
+                stock_qty:   { type: integer, minimum: 0 }
+      responses:
+        "200": { description: Updated product }
+        "403": { description: Not your product }
+        "404": { description: Not found }
+
+    delete:
+      summary: Archive a product (soft delete)
+      tags: [Products]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Archived }
+        "403": { description: Not your product }
+
+  /orders:
+    post:
+      summary: Create an order (customer only, idempotent)
+      tags: [Orders]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+          description: Unique key to prevent duplicate orders on retry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [product_id, quantity]
+                    properties:
+                      product_id: { type: string, format: uuid }
+                      quantity:   { type: integer, minimum: 1 }
+              additionalProperties: false
+      responses:
+        "201": { description: Order created, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        "400": { description: Invalid input (includes rejection of price field) }
+        "409": { description: Out of stock }
+        "422": { description: Idempotency key reused with different payload }
+
+    get:
+      summary: List orders
+      tags: [Orders]
+      security: [{ BearerAuth: [] }]
+      description: Customers see their own orders. Sellers see orders containing their products.
+      responses:
+        "200": { description: Orders list }
+
+  /orders/{id}:
+    get:
+      summary: Get one order
+      tags: [Orders]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Order with items }
+        "403": { description: Not your order }
+        "404": { description: Not found }
